@@ -1,23 +1,19 @@
-name: Build ArasClient from open source
+name: Build NEXORA Client
 
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
-  release:
-    types: [ published ]
 
 jobs:
   build-core:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout core bindings
         uses: actions/checkout@v4
         with:
           repository: ArasTey/AndroidLibXrayLite
-          # Pinned to the commit main stood on when the plugin was built; like
-          # the core tag below, the same run of a release builds from the same
-          # bindings source.
           ref: 33f200abc13762b5c79a11597f2273fdef1d21e7
           path: core-bindings
 
@@ -25,16 +21,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ArasTey/xray-core
-          # Pinned by tag, not to a branch: the core is built from source here, so
-          # what it is has to be the same on every run of a given release.
           ref: aras-core-26.10.22
           path: xray-core-src
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          # Must be >= the `go` directive in the core's go.mod. The core declares 1.27;
-          # pinning lower only works because Go silently auto-downloads a newer toolchain.
           go-version: '1.27'
 
       - name: Set up JDK
@@ -66,7 +58,7 @@ jobs:
           curl -sL https://github.com/Chocolate4U/Iran-v2ray-rules/releases/latest/download/geoip.dat -o assets/geoip.dat
           curl -sL https://github.com/Chocolate4U/Iran-v2ray-rules/releases/latest/download/geosite.dat -o assets/geosite.dat
 
-      - name: Build core AAR (aras-core.aar)
+      - name: Build core AAR
         run: |
           cd core-bindings
           go mod edit -replace=github.com/xtls/xray-core=../xray-core-src
@@ -77,12 +69,11 @@ jobs:
             -o $GITHUB_WORKSPACE/aras-core.aar ./
 
       - name: Verify core contents
-        # The ArasClient patches are compiled into the native library. A patch that
-        # silently fails to apply still produces a working .so — it just drops the
-        # feature — so assert on the symbols before trusting the AAR.
         run: |
           set -euo pipefail
-          rm -rf /tmp/aarcheck && mkdir -p /tmp/aarcheck && cd /tmp/aarcheck
+          rm -rf /tmp/aarcheck
+          mkdir -p /tmp/aarcheck
+          cd /tmp/aarcheck
           unzip -o -q "$GITHUB_WORKSPACE/aras-core.aar" "jni/arm64-v8a/libgojni.so"
           SO=jni/arm64-v8a/libgojni.so
 
@@ -91,17 +82,17 @@ jobs:
           anytls=$(count anytls)
           amnezia=$(count amneziawg)
           stockwg=$(count 'golang.zx2c4.com/wireguard')
+
           echo "anytls=$anytls amneziawg=$amnezia stock-wireguard=$stockwg"
 
           fail=0
-          [ "$anytls" -gt 0 ] || { echo "::error::AnyTLS support missing from core"; fail=1; }
-          [ "$amnezia" -gt 0 ] || { echo "::error::AmneziaWG support missing from core"; fail=1; }
-          # proxy/wireguard must compile against amneziawg-go, otherwise the AmneziaWG
-          # junk params parse into the proto and are then silently ignored.
-          [ "$stockwg" -eq 0 ] || { echo "::error::Stock wireguard-go linked; AmneziaWG obfuscation is inert"; fail=1; }
+          [ "$anytls" -gt 0 ] || { echo "::error::AnyTLS missing"; fail=1; }
+          [ "$amnezia" -gt 0 ] || { echo "::error::AmneziaWG missing"; fail=1; }
+          [ "$stockwg" -eq 0 ] || { echo "::error::Stock WireGuard linked"; fail=1; }
+
           exit $fail
 
-      - name: Upload core AAR artifact
+      - name: Upload core AAR
         uses: actions/upload-artifact@v4
         with:
           name: aras-core-aar
@@ -110,11 +101,12 @@ jobs:
   build-app:
     runs-on: ubuntu-latest
     needs: build-core
+
     steps:
       - name: Checkout app
         uses: actions/checkout@v4
 
-      - name: Download core AAR built from source
+      - name: Download core AAR
         uses: actions/download-artifact@v4
         with:
           name: aras-core-aar
@@ -131,51 +123,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Restore signing key
-        # The keystore is deliberately not in the repository: whoever can read it can
-        # sign an update the phone will accept. It comes from the repository secrets
-        # instead, so a release is signed exactly as a local build is.
-        env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          mkdir -p keystore
-          printf '%s' "$KEYSTORE_B64" | base64 -d > keystore/arasclient-release.jks
-          cat > keystore.properties <<EOF
-          storeFile=keystore/arasclient-release.jks
-          storePassword=$KEYSTORE_PASSWORD
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
-          EOF
-
-      - name: Test, lint, and build release APKs
+      - name: Build Debug APK
         run: |
           chmod +x gradlew
-          ./gradlew :app:testDebugUnitTest :app:lintVitalRelease :app:assembleRelease --no-daemon
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon
 
-      - name: Upload APK artifacts
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: apks
-          path: app/build/outputs/apk/release/*.apk
-
-  release:
-    runs-on: ubuntu-latest
-    needs: build-app
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-    steps:
-      - name: Download APKs
-        uses: actions/download-artifact@v4
-        with:
-          name: apks
-          path: apks
-
-      - name: Attach to release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: apks/*.apk
+          name: NEXORA-CLIENT
+          path: app/build/outputs/apk/debug/*.apk
