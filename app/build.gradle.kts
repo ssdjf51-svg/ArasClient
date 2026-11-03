@@ -13,11 +13,11 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "com.nexora.client"
+    namespace = "com.aras.client"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.nexora.client"
+        applicationId = "com.aras.client"
         minSdk = 24
         targetSdk = 37
         versionCode = 1875
