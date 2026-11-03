@@ -785,7 +785,6 @@
     <string name="title_export_sub_txt">Export subscription (TXT)</string>
     <string name="title_reset_settings">Reset settings to default</string>
     <string name="summary_reset_settings">All preferences return to factory defaults. The app restarts this screen.</string>
-</resources><?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name" translatable="false">ArasClient</string>
     <string name="app_widget_name">Connect / Disconnect</string>
